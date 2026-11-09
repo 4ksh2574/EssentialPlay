@@ -200,34 +200,39 @@ const posterCache=new Map();
 async function lookupPoster(item){
   const key=item.wikiTitle||item.title;
   if(posterCache.has(key))return posterCache.get(key);
-  const restNames=[key,key.replace(/ \(film\)$/i,'')];
-  for(const name of restNames){
+  const names=[key,key.replace(/ \\(film\\)$/i,''),key+' (film)'];
+  const remember=(poster,summary='',wikiId='')=>{const result=poster?{poster,summary,wikiId}:null;posterCache.set(key,result);return result};
+  // First try the exact Wikipedia article, preferring its original-resolution artwork.
+  for(const name of names){
     try{
       const page=await getJson('https://en.wikipedia.org/api/rest_v1/page/summary/'+encodeURIComponent(name.replace(/ /g,'_')));
       const image=page.originalimage?.source||page.thumbnail?.source;
-      if(image){const result={poster:image,summary:page.extract||'',wikiId:''};posterCache.set(key,result);return result}
+      if(image)return remember(image,page.extract||'',page.wikibase_item||'');
     }catch(e){}
   }
-  for(const candidate of [key,key+' film']){
+  // Search Wikipedia pages and request large thumbnails plus Wikidata identifiers.
+  for(const candidate of [key+' film poster',key+' film',key]){
     try{
-      const url='https://en.wikipedia.org/w/api.php?action=query&format=json&formatversion=2&origin=*&list=search&srsearch='+encodeURIComponent(candidate)+'&srnamespace=0&srlimit=8';
-      const search=await getJson(url);
-      const hits=search.query?.search||[];
-      if(!hits.length)continue;
-      const ids=hits.map(x=>x.pageid).join('|');
-      const details=await getJson('https://en.wikipedia.org/w/api.php?action=query&format=json&formatversion=2&origin=*&pageids='+ids+'&prop=pageimages|extracts|pageprops&piprop=thumbnail|original&pithumbsize=700&exintro=1&explaintext=1');
-      const pages=details.query?.pages||[];
+      const url='https://en.wikipedia.org/w/api.php?action=query&format=json&formatversion=2&origin=*&generator=search&gsrsearch='+encodeURIComponent(candidate)+'&gsrnamespace=0&gsrlimit=8&prop=pageimages|extracts|pageprops&piprop=thumbnail|original&pithumbsize=1000&exintro=1&explaintext=1';
+      const data=await getJson(url);
+      const pages=data.query?.pages||[];
       const target=normTitle(key);
-      const ranked=pages.filter(p=>p.thumbnail?.source||p.original?.source).sort((a,b)=>{
+      const ranked=pages.filter(p=>p.original?.source||p.thumbnail?.source).sort((a,b)=>{
         const score=p=>{const t=normTitle(p.title);return (t===target?0:t.includes(target)?1:target.includes(t)?2:5)+(p.index||0)/100};
         return score(a)-score(b);
       });
       const page=ranked[0];
-      if(page){
-        const result={poster:page.original?.source||page.thumbnail?.source,summary:page.extract||'',wikiId:page.pageprops?.wikibase_item||''};
-        posterCache.set(key,result);
-        return result;
-      }
+      if(page)return remember(page.original?.source||page.thumbnail?.source,page.extract||'',page.pageprops?.wikibase_item||'');
+    }catch(e){}
+  }
+  // Final artwork source: Wikimedia Commons file search. Some regional titles are not on English Wikipedia.
+  for(const candidate of [key+' official film poster',key+' movie poster']){
+    try{
+      const url='https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrsearch='+encodeURIComponent(candidate)+'&gsrnamespace=6&gsrlimit=8&prop=imageinfo&iiprop=url&iiurlwidth=900';
+      const data=await getJson(url);
+      const pages=Object.values(data.query?.pages||{});
+      const page=pages.find(p=>/poster|film|movie/i.test(p.title||'')&&p.imageinfo?.[0]?.thumburl)||pages.find(p=>p.imageinfo?.[0]?.thumburl);
+      if(page)return remember(page.imageinfo[0].thumburl,'','');
     }catch(e){}
   }
   posterCache.set(key,null);
@@ -237,7 +242,7 @@ async function fetchPosters(items){
   const missing=items.filter(x=>!x.poster);
   if(!missing.length)return;
   let cursor=0;
-  const workers=Array.from({length:4},async()=>{
+  const workers=Array.from({length:3},async()=>{
     while(cursor<missing.length){
       const item=missing[cursor++];
       const result=await lookupPoster(item);
@@ -245,16 +250,13 @@ async function fetchPosters(items){
       item.poster=result.poster;
       item.summary=result.summary||item.summary||'';
       item.wikiId=result.wikiId||item.wikiId||'';
-      const cards=document.querySelectorAll('#results [data-id],#upcomingGrid [data-id],#savedGrid [data-id]');
-      cards.forEach(card=>{
+      document.querySelectorAll('#results [data-id],#upcomingGrid [data-id],#savedGrid [data-id]').forEach(card=>{
         if(card.dataset.id!==item.id)return;
-        const box=card.querySelector('.poster');
-        if(!box)return;
-        box.innerHTML='<img loading="lazy" decoding="async" src="'+esc(item.poster)+'" alt="'+esc(titleOf(item))+' poster">';
+        const box=card.querySelector('.poster');if(!box)return;
+        box.innerHTML='<img loading="lazy" decoding="async" referrerpolicy="no-referrer" src="'+esc(item.poster)+'" alt="'+esc(titleOf(item))+' poster">';
         const img=box.querySelector('img');
-        img.onerror=()=>{box.innerHTML='<div class="no-image">EssentialPlay</div>'};
+        img.onerror=()=>{box.innerHTML='<div class="no-image">'+esc(titleOf(item))+'</div>'};
         img.onload=()=>img.classList.add('loaded');
-        if(img.complete&&img.naturalWidth>0)img.classList.add('loaded');
       });
     }
   });
@@ -263,14 +265,51 @@ async function fetchPosters(items){
 function renderGrid(el,items,empty){el.innerHTML=items.length?items.map(x=>'<article class="card" data-id="'+esc(x.id)+'" data-kind="'+x.kind+'"><div class="poster">'+(x.poster?'<img loading="lazy" src="'+esc(x.poster)+'" alt="'+esc(titleOf(x))+' poster">':'<div class="no-image">EssentialPlay</div>')+'</div><h3>'+esc(titleOf(x))+'</h3><small>'+(x.upcoming?esc(x.releaseDate)+' · '+esc(x.releaseStatus):esc(yearOf(x)))+'</small></article>').join(''):'<div class="empty">'+empty+'</div>';el.querySelectorAll('img').forEach(im=>{im.onload=()=>im.classList.add('loaded');if(im.complete&&im.naturalWidth)im.classList.add('loaded');im.onerror=()=>{im.style.display='none';im.parentElement.innerHTML='<div class="no-image">EssentialPlay</div>'}})}
 async function loadTitles(){if(type==='tv'){$('#upcomingSection').style.display='none';$('#results').innerHTML='<div class="empty">Loading series…</div>';try{const shows=await loadShows();paintFast(shows);$('#resultsTitle').textContent='Popular series';return}catch(e){$('#results').innerHTML='<div class="empty">Series catalogue is temporarily unavailable. Try again shortly.</div>';message(e.message);return}}$('#upcomingSection').style.display='block';const upcoming=visibleCatalogue().filter(x=>x.upcoming).sort((a,b)=>a.releaseSort.localeCompare(b.releaseSort));const curated=visibleCatalogue().filter(x=>!x.upcoming);$('#resultsTitle').textContent=language==='all'?'Popular films':language==='pa'?'Punjabi favourites':language==='hi'?'Hindi favourites':'English favourites';paintFast(curated);renderGrid($('#upcomingGrid'),upcoming,'No upcoming titles currently listed.');$('#resultCount').textContent=curated.length+' featured films · '+upcoming.length+' upcoming';message('');fetchPosters([...curated,...upcoming]);try{const latest=await loadMovies();const filtered=latest.filter(x=>language==='all'||x.lang===language);filtered.forEach(x=>dynamicResults.set(x.id,x));if(filtered.length){const seen=new Set(filtered.map(x=>normTitle(x.title)));const merged=[...filtered,...curated.filter(x=>!seen.has(normTitle(x.title)))];$('#resultsTitle').textContent=language==='all'?'Latest films':language==='pa'?'Latest Punjabi films':language==='hi'?'Latest Hindi films':'Latest English films';paintFast(merged);$('#resultCount').textContent=merged.length+' films · '+upcoming.length+' upcoming';fetchPosters(filtered)}}catch(e){message('Live updates unavailable — featured titles remain available.')}}
 async function searchTitles(){const raw=$('#query').value.trim();if(type==='tv'){try{const shows=await loadShows(raw);paintFast(shows)}catch(e){message('Search unavailable.')}return}const q=raw.replace(/\b(latest|new|upcoming|movie|movies|film|films)\b/gi,' ').replace(/\s+/g,' ').trim();$('#upcomingSection').style.display='none';$('#results').innerHTML='<div class="empty">Searching live movie catalogues…</div>';let live=[];try{if(q)live=await loadMovies(q);live.forEach(x=>dynamicResults.set(x.id,x))}catch(e){}let wiki=[];if(q&&!live.length){try{const search=await getJson('https://en.wikipedia.org/w/api.php?action=query&format=json&origin=*&list=search&srsearch='+encodeURIComponent(q+' film movie')+'&srnamespace=0&srlimit=10');const pages=search.query?.search||[];if(pages.length){const ids=pages.map(x=>x.pageid).join('|');const detail=await getJson('https://en.wikipedia.org/w/api.php?action=query&format=json&origin=*&pageids='+ids+'&prop=pageimages|extracts|pageprops&piprop=thumbnail&pithumbsize=640&exintro=1&explaintext=1');wiki=(detail.query?.pages?Object.values(detail.query.pages):[]).map(p=>({id:'wiki-'+p.pageid,kind:'movie',title:p.title,date:(p.extract||'').match(/(?:19|20)\d{2}/)?.[0]||'',year:(p.extract||'').match(/(?:19|20)\d{2}/)?.[0]||'',poster:p.thumbnail?.source||'',summary:p.extract||'',wikiId:p.pageprops?.wikibase_item||'',lang:language==='all'?'all':language,source:'https://en.wikipedia.org/?curid='+p.pageid})).filter(x=>/film|movie|cinema|ramayana/i.test(x.title+' '+x.summary)).slice(0,8);wiki.forEach(x=>dynamicResults.set(x.id,x))}}catch(e){}}const curated=visibleCatalogue(q);const combined=[...live,...curated.filter(x=>!live.some(y=>normTitle(y.title)===normTitle(x.title))),...wiki];const unique=[...new Map(combined.map(x=>[normTitle(x.title),x])).values()];paintFast(unique);if(!unique.length&&raw){message('No results found. Try the original movie title.')}else{message(live.length?'Live movie results loaded.':wiki.length?'More title matches from Wikipedia.':'');fetchPosters(unique)}}
-async function openDetails(id,kind){clearTimeout(previewTimer);const item=catalogue.find(x=>x.id===id)||upcomingCatalogue.find(x=>x.id===id)||dynamicResults.get(id)||saved.find(x=>x.id===id)||{};let data={...item};if(kind==='tv'){try{data=await getJson('https://api.tvmaze.com/shows/'+encodeURIComponent(id))}catch(e){message('Could not load series details.');return}}else if(data.wikiId){try{const query='SELECT ?trailer WHERE { wd:'+data.wikiId+' wdt:P1651 ?trailer. } LIMIT 1';const d=await getJson(WD+encodeURIComponent(query),{'Accept':'application/sparql-results+json'});data.trailerId=d.results?.bindings?.[0]?.trailer?.value||''}catch(e){}}
-const title=titleOf(data),poster=posterOf(data),year=yearOf(data),summary=data.summary||'Discover the story, explore the trailer and find a place to watch.',trailerId=data.trailerId||'',isSaved=saved.some(x=>x.id===String(id)&&x.kind===kind);
-const tags=kind==='tv'?['Series','TV']:(data.upcoming?['Upcoming',data.lang==='pa'?'Punjabi':data.lang==='hi'?'Hindi':'English',data.releaseStatus||'Expected']:([data.lang==='pa'?'Punjabi':data.lang==='hi'?'Hindi':'Film','Essential Pick']));
-$('#detailContent').innerHTML='<div class="cinema-page"><div class="cinema-backdrop">'+(poster?'<img src="'+esc(poster)+'" alt="">':'')+(trailerId?'<div id="previewSlot"></div>':'')+'</div>'+(trailerId?'<button class="cinema-play" id="playPreview" aria-label="Play trailer">▶</button>':'')+'<section class="cinema-panel"><div class="cinema-info">'+(poster?'<img class="cinema-thumb" src="'+esc(poster)+'" alt="'+esc(title)+' poster">':'<div class="cinema-thumb"></div>')+'<div class="cinema-copy"><div class="cinema-label">EssentialPlay · '+(kind==='tv'?'SERIES':'FEATURE FILM')+'</div><h1 class="cinema-title">'+esc(title)+'</h1><div class="cinema-meta">'+esc(data.upcoming?data.releaseDate:year)+' · '+(kind==='tv'?'Series':data.upcoming?'Upcoming movie':'Movie')+'</div><p class="cinema-description">'+esc(summary)+'</p><div class="cinema-tags">'+tags.map(t=>'<span class="cinema-tag">'+esc(t)+'</span>').join('')+'</div></div></div><div class="cinema-actions"><a class="cinema-watch" style="display:flex;align-items:center;justify-content:center;text-decoration:none" href="https://www.youtube.com/results?search_query='+encodeURIComponent(title+' official trailer')+'" target="_blank" rel="noopener">Watch Trailer</a><div class="cinema-secondary"><button class="btn" id="saveToggle">'+(isSaved?'♥ Saved to Watchlist':'＋ Add to Watchlist')+'</button>'+(kind==='movie'?' <a class="btn" href="https://www.justwatch.com/in/search?q='+encodeURIComponent(title)+'" target="_blank" rel="noopener">Where to watch</a>':'')+'</div></div></section></div>';
-$('#saveToggle').onclick=()=>{const i=saved.findIndex(x=>x.id===String(id)&&x.kind===kind);if(i>=0)saved.splice(i,1);else saved.unshift({id:String(id),kind,title,year,date:year,poster});localStorage.setItem('ep_saved',JSON.stringify(saved));renderSaved();$('#saveToggle').textContent=i>=0?'＋ Add to Watchlist':'♥ Saved to Watchlist'};
-showModal('detailModal');
-const play=()=>{const slot=$('#previewSlot');if(slot&&!slot.querySelector('iframe'))slot.innerHTML='<iframe title="'+esc(title)+' trailer" src="https://www.youtube-nocookie.com/embed/'+encodeURIComponent(trailerId)+'?autoplay=1&mute=1&playsinline=1&controls=1&rel=0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>';const btn=$('#playPreview');if(btn)btn.style.display='none'};
-if(trailerId){$('#playPreview').onclick=play;previewTimer=setTimeout(play,5000)}
+async function findTrailer(title){
+  const instances=['https://pipedapi.adminforge.de','https://pipedapi.privacy.com.de'];
+  for(const host of instances){
+    try{
+      const data=await getJson(host+'/search?q='+encodeURIComponent(title+' official trailer')+'&filter=videos');
+      const items=data.items||[];
+      const hit=items.find(x=>/official.*trailer|trailer.*official/i.test(x.title||''))||items.find(x=>/trailer/i.test(x.title||''));
+      const id=hit?.url?.match(/[?&]v=([\w-]{6,})/)?.[1]||hit?.url?.match(/\/watch\/([\w-]{6,})/)?.[1];
+      if(id)return id;
+    }catch(e){}
+  }
+  return '';
+}
+async function openDetails(id,kind){
+  clearTimeout(previewTimer);
+  const item=catalogue.find(x=>x.id===id)||upcomingCatalogue.find(x=>x.id===id)||dynamicResults.get(id)||saved.find(x=>x.id===id)||{};
+  let data={...item};
+  if(kind==='tv'){
+    try{data=await getJson('https://api.tvmaze.com/shows/'+encodeURIComponent(id))}catch(e){message('Could not load series details.');return}
+  }else{
+    if(!data.poster||!data.wikiId){
+      const found=await lookupPoster(data);
+      if(found){data.poster=data.poster||found.poster;data.summary=data.summary||found.summary;data.wikiId=data.wikiId||found.wikiId}
+    }
+    if(!data.trailerId&&data.wikiId){
+      try{
+        const query='SELECT ?trailer WHERE { wd:'+data.wikiId+' wdt:P1651 ?trailer. } LIMIT 1';
+        const result=await getJson(WD+encodeURIComponent(query),{'Accept':'application/sparql-results+json'});
+        data.trailerId=result.results?.bindings?.[0]?.trailer?.value||'';
+      }catch(e){}
+    }
+  }
+  const title=titleOf(data),poster=posterOf(data),year=yearOf(data);
+  const summary=(data.summary||'Discover the story, explore the trailer and find a place to watch.').replace(/<[^>]*>/g,' ').replace(/\\s+/g,' ').trim();
+  let trailerId=data.trailerId||'';
+  if(!trailerId)trailerId=await findTrailer(title);
+  const isSaved=saved.some(x=>x.id===String(id)&&x.kind===kind);
+  const tags=kind==='tv'?['Series','TV']:(data.upcoming?['Upcoming',data.lang==='pa'?'Punjabi':data.lang==='hi'?'Hindi':'English',data.releaseStatus||'Expected']:[data.lang==='pa'?'Punjabi':data.lang==='hi'?'Hindi':'Film','Essential Pick']);
+  $('#detailContent').innerHTML='<div class="cinema-page"><div class="cinema-backdrop">'+(poster?'<img referrerpolicy="no-referrer" src="'+esc(poster)+'" alt="'+esc(title)+' artwork">':'')+(trailerId?'<div id="previewSlot"></div>':'')+'</div>'+(trailerId?'<button class="cinema-play" id="playPreview" aria-label="Play trailer">▶</button>':'')+'<section class="cinema-panel"><div class="cinema-info">'+(poster?'<img class="cinema-thumb" referrerpolicy="no-referrer" src="'+esc(poster)+'" alt="'+esc(title)+' poster">':'<div class="cinema-thumb"></div>')+'<div class="cinema-copy"><div class="cinema-label">EssentialPlay · '+(kind==='tv'?'SERIES':'FEATURE FILM')+'</div><h1 class="cinema-title">'+esc(title)+'</h1><div class="cinema-meta">'+esc(data.upcoming?data.releaseDate:year)+' · '+(kind==='tv'?'Series':data.upcoming?'Upcoming movie':'Movie')+'</div><p class="cinema-description">'+esc(summary)+'</p><div class="cinema-tags">'+tags.map(t=>'<span class="cinema-tag">'+esc(t)+'</span>').join('')+'</div></div></div><div class="cinema-actions"><button class="cinema-watch" id="playTrailerAction" '+(trailerId?'':'disabled')+'>▶ Play trailer in EssentialPlay</button><div class="cinema-secondary"><button class="btn" id="saveToggle">'+(isSaved?'♥ Saved to Watchlist':'＋ Add to Watchlist')+'</button>'+(kind==='movie'?'<a class="btn" href="https://www.justwatch.com/in/search?q='+encodeURIComponent(title)+'" target="_blank" rel="noopener">Where to watch</a>':'')+'<a class="btn" href="https://www.youtube.com/results?search_query='+encodeURIComponent(title+' official trailer')+'" target="_blank" rel="noopener">YouTube ↗</a></div></div></section></div>';
+  const save=$('#saveToggle');
+  save.onclick=()=>{const i=saved.findIndex(x=>x.id===String(id)&&x.kind===kind);if(i>=0)saved.splice(i,1);else saved.unshift({id:String(id),kind,title,year,date:year,poster});localStorage.setItem('ep_saved',JSON.stringify(saved));renderSaved();save.textContent=i>=0?'＋ Add to Watchlist':'♥ Saved to Watchlist'};
+  showModal('detailModal');
+  const play=()=>{const slot=$('#previewSlot');if(slot&&!slot.querySelector('iframe')&&trailerId)slot.innerHTML='<iframe title="'+esc(title)+' trailer" src="https://www.youtube-nocookie.com/embed/'+encodeURIComponent(trailerId)+'?autoplay=1&mute=1&playsinline=1&controls=1&rel=0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>';const btn=$('#playPreview');if(btn)btn.style.display='none';const action=$('#playTrailerAction');if(action)action.textContent='Trailer playing';};
+  if(trailerId){$('#playPreview').onclick=play;$('#playTrailerAction').onclick=play;previewTimer=setTimeout(play,5000)}
+  else $('#playTrailerAction').textContent='Trailer not available in-app';
 }
 
 $('#heroExplore').onclick=()=>document.querySelector('#resultsTitle').scrollIntoView({behavior:'smooth',block:'start'});$('#heroSurprise').onclick=()=>{const picks=visibleCatalogue().filter(x=>!x.upcoming);if(picks.length)openDetails(picks[Math.floor(Math.random()*picks.length)].id,'movie')};const heroPick=catalogue.find(x=>x.title==='Carry on Jatta 3')||catalogue[0];if(heroPick){$('#heroTitle').textContent=heroPick.title;$('#heroDesc').textContent='An Essential Pick. Discover Punjabi favourites, Hindi hits and popular English films.';lookupPoster(heroPick).then(p=>{if(p&&p.poster){heroPick.poster=p.poster;$('#heroArt').style.backgroundImage='url('+JSON.stringify(p.poster)+')'}})}renderSaved();loadTitles();
