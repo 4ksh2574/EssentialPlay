@@ -165,7 +165,51 @@ let catalogueReady=false;
 function visibleCatalogue(q=''){let arr=catalogue.filter(x=>language==='all'||x.lang===language);if(q){const needle=normTitle(q);arr=arr.filter(x=>normTitle(x.title).includes(needle)||(x.aliases||[]).some(a=>normTitle(a).includes(needle))||needle.includes(normTitle(x.title)))}return arr}
 function paintFast(items){renderGrid($('#results'),items,'No matching titles. Try another search or language.');$('#results img').forEach(im=>{im.onload=()=>im.classList.add('loaded');if(im.complete&&im.naturalWidth)im.classList.add('loaded');im.onerror=()=>{im.style.display='none';im.parentElement.innerHTML='<div class="no-image">AXo</div>'}});$('#resultCount').textContent=items.length+' titles'}
 function normTitle(v){return String(v||'').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').replace(/[^a-z0-9]/g,'')}
-async function fetchPosters(items){const uncached=items.filter(x=>!x.poster);if(!uncached.length)return;const titles=uncached.map(x=>x.wikiTitle||x.title).join('|');const url='https://en.wikipedia.org/w/api.php?action=query&format=json&formatversion=2&origin=*&redirects=1&normalize=1&prop=pageimages|extracts|pageprops&piprop=thumbnail&pithumbsize=640&exintro=1&explaintext=1&titles='+encodeURIComponent(titles);try{const d=await getJson(url);const pages=Array.isArray(d.query?.pages)?d.query.pages:Object.values(d.query?.pages||{});for(const p of pages){const pn=normTitle(p.title);const hit=uncached.find(x=>normTitle(x.wikiTitle||x.title)===pn)||uncached.find(x=>pn.includes(normTitle(x.wikiTitle||x.title))||normTitle(x.wikiTitle||x.title).includes(pn));if(hit){hit.poster=p.thumbnail?.source||'';hit.summary=p.extract||hit.summary||'';hit.wikiId=p.pageprops?.wikibase_item||''}}document.querySelectorAll('#results [data-id],#savedGrid [data-id]').forEach(card=>{const hit=items.find(x=>x.id===card.dataset.id);if(hit&&hit.poster){const box=card.querySelector('.poster');if(box){box.innerHTML='<img loading="lazy" decoding="async" src="'+esc(hit.poster)+'" alt="'+esc(titleOf(hit))+' poster">';const im=box.querySelector('img');im.onload=()=>im.classList.add('loaded');im.onerror=()=>{box.innerHTML='<div class="no-image">AXo</div>'};if(im.complete&&im.naturalWidth>0)im.classList.add('loaded');}}})}catch(e){message('Poster service unavailable right now.');}
+const posterCache=new Map();
+async function lookupPoster(item){
+  const key=item.wikiTitle||item.title;
+  if(posterCache.has(key))return posterCache.get(key);
+  const url='https://en.wikipedia.org/w/api.php?action=query&format=json&formatversion=2&origin=*&generator=search&gsrsearch='+encodeURIComponent('intitle:'+key+' film')+'&gsrnamespace=0&gsrlimit=6&prop=pageimages|extracts&piprop=thumbnail&pithumbsize=640&exintro=1&explaintext=1';
+  try{
+    const data=await getJson(url);
+    const pages=Array.isArray(data.query?.pages)?data.query.pages:Object.values(data.query?.pages||{});
+    const target=normTitle(key);
+    const ranked=pages.filter(p=>p.thumbnail?.source).sort((a,b)=>{
+      const score=p=>{const t=normTitle(p.title);return (t===target?0:t.includes(target)?1:target.includes(t)?2:4)+(p.index||0)/100};
+      return score(a)-score(b);
+    });
+    const page=ranked[0];
+    const result=page?{poster:page.thumbnail.source,summary:page.extract||'',wikiId:page.pageprops?.wikibase_item||''}:null;
+    posterCache.set(key,result);
+    return result;
+  }catch(e){return null}
+}
+async function fetchPosters(items){
+  const missing=items.filter(x=>!x.poster);
+  if(!missing.length)return;
+  let cursor=0;
+  const workers=Array.from({length:4},async()=>{
+    while(cursor<missing.length){
+      const item=missing[cursor++];
+      const result=await lookupPoster(item);
+      if(!result)continue;
+      item.poster=result.poster;
+      item.summary=result.summary||item.summary||'';
+      item.wikiId=result.wikiId||item.wikiId||'';
+      const cards=document.querySelectorAll('#results [data-id],#savedGrid [data-id]');
+      cards.forEach(card=>{
+        if(card.dataset.id!==item.id)return;
+        const box=card.querySelector('.poster');
+        if(!box)return;
+        box.innerHTML='<img loading="lazy" decoding="async" src="'+esc(item.poster)+'" alt="'+esc(titleOf(item))+' poster">';
+        const img=box.querySelector('img');
+        img.onerror=()=>{box.innerHTML='<div class="no-image">AXo</div>'};
+        img.onload=()=>img.classList.add('loaded');
+        if(img.complete&&img.naturalWidth>0)img.classList.add('loaded');
+      });
+    }
+  });
+  await Promise.all(workers);
 }
 function renderGrid(el,items,empty){el.innerHTML=items.length?items.map(x=>'<article class="card" data-id="'+esc(x.id)+'" data-kind="'+x.kind+'"><div class="poster">'+(x.poster?'<img loading="lazy" src="'+esc(x.poster)+'" alt="'+esc(titleOf(x))+' poster">':'<div class="no-image">AXo</div>')+'</div><h3>'+esc(titleOf(x))+'</h3><small>'+esc(yearOf(x))+'</small></article>').join(''):'<div class="empty">'+empty+'</div>';el.querySelectorAll('img').forEach(im=>{im.onload=()=>im.classList.add('loaded');if(im.complete&&im.naturalWidth)im.classList.add('loaded');im.onerror=()=>{im.style.display='none';im.parentElement.innerHTML='<div class="no-image">AXo</div>'}})}
 async function loadTitles(){const items=type==='movie'?visibleCatalogue():[];if(type==='tv'){try{const shows=await loadShows();paintFast(shows);return}catch(e){$('#results').innerHTML='<div class="empty">Series catalogue unavailable.</div>';return}}$('#resultsTitle').textContent=language==='all'?'Popular films':language==='pa'?'Punjabi films':language==='hi'?'Hindi films':'English films';paintFast(items);message('');if(!catalogueReady){catalogueReady=true;fetchPosters(items)}}
