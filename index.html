@@ -200,7 +200,7 @@ const posterCache=new Map();
 async function lookupPoster(item){
   const key=item.wikiTitle||item.title;
   if(posterCache.has(key))return posterCache.get(key);
-  const names=[key,key.replace(/ \\(film\\)$/i,''),key+' (film)'];
+  const names=[key,key.replace(/ \(film\)$/i,''),key+' (film)'];
   const remember=(poster,summary='',wikiId='')=>{const result=poster?{poster,summary,wikiId}:null;posterCache.set(key,result);return result};
   // First try the exact Wikipedia article, preferring its original-resolution artwork.
   for(const name of names){
