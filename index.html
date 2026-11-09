@@ -43,6 +43,53 @@ a{color:var(--axo)}
 #detailContent .meta{letter-spacing:2px;text-transform:uppercase;color:var(--axo)}
 #detailContent .detail-actions{margin-top:22px}
 @media(max-width:700px){#detailModal .dialog{padding:14px 18px 30px}#detailContent>.detail-full{grid-template-columns:1fr;gap:24px;align-content:start;padding-bottom:25px}#detailContent .detail-visual{width:min(68vw,300px)}#detailContent .detail-copy h2{font-size:34px;margin:8px 0 12px}.grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:11px}}
+
+/* Immersive AXo title page — inspired by the supplied detail-screen reference */
+#detailModal{padding:0;background:#050807;display:none;align-items:stretch;justify-content:stretch}
+#detailModal.show{display:flex}
+#detailModal .dialog{position:relative;width:100%;height:100%;max-width:none;max-height:none;overflow:hidden;border:0;border-radius:0;padding:0;background:#050807}
+#detailModal .dialog-head{position:absolute;z-index:5;top:0;left:0;right:0;margin:0;padding:calc(18px + env(safe-area-inset-top)) clamp(18px,4vw,54px) 18px;background:linear-gradient(#050807aa,transparent);pointer-events:none}
+#detailModal .dialog-head>*{pointer-events:auto}
+#detailModal .dialog-head .eyebrow{display:none}
+#detailModal .close{width:42px;height:42px;border:1px solid #ffffff30;border-radius:50%;background:#08100dcc;color:#fff;font-size:28px;backdrop-filter:blur(16px)}
+#detailContent{width:100%;height:100%;max-width:none;margin:0}
+#detailContent>.cinema-page{position:relative;width:100%;height:100%;min-height:100svh;overflow:auto;background:#070c0a}
+.cinema-backdrop{position:absolute;inset:0 0 12%;overflow:hidden;background:#101a16}
+.cinema-backdrop>img{width:100%;height:100%;object-fit:cover;object-position:center 25%;display:block;filter:saturate(.9)}
+.cinema-backdrop:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,#05080735 0%,#05080705 28%,#05080766 53%,#050807 100%),linear-gradient(90deg,#05080766,transparent 70%)}
+.cinema-play{position:absolute;z-index:2;left:50%;top:42%;transform:translate(-50%,-50%);width:76px;height:76px;border:1px solid #ffffff88;border-radius:50%;display:grid;place-items:center;background:#07110dcc;color:#fff;font-size:28px;backdrop-filter:blur(18px);box-shadow:0 8px 38px #0008}
+.cinema-play:active{transform:translate(-50%,-50%) scale(.94)}
+.cinema-panel{position:absolute;z-index:3;left:0;right:0;bottom:0;padding:clamp(18px,4vw,42px) clamp(20px,6vw,76px) calc(22px + env(safe-area-inset-bottom));background:linear-gradient(180deg,transparent,#070c0af2 14%,#070c0a 100%)}
+.cinema-info{max-width:1050px;margin:0 auto;display:grid;grid-template-columns:112px minmax(0,1fr);gap:18px;align-items:end}
+.cinema-thumb{width:112px;aspect-ratio:2/3;object-fit:cover;border-radius:12px;border:1px solid #a8d8c744;box-shadow:0 12px 35px #0009}
+.cinema-copy{min-width:0;padding-bottom:2px}
+.cinema-label{font-size:10px;letter-spacing:2px;color:#a8d8c7;font-weight:800;text-transform:uppercase}
+.cinema-title{font-size:clamp(25px,5vw,42px);letter-spacing:-1.3px;line-height:1.02;margin:5px 0 8px;color:#f5faf7}
+.cinema-meta{font-size:12px;color:#a8b6af}
+.cinema-description{font-size:13px;line-height:1.55;color:#b9c5be;max-width:650px;margin:9px 0 0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.cinema-tags{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}
+.cinema-tag{padding:6px 12px;border:1px solid #ffffff20;border-radius:999px;background:#ffffff10;color:#dce7e1;font-size:11px;backdrop-filter:blur(12px)}
+.cinema-actions{max-width:1050px;margin:18px auto 0}
+.cinema-watch{width:100%;min-height:54px;border:0;border-radius:999px;background:linear-gradient(110deg,#78cdb0,#a8d8c7);color:#07110d;font-weight:800;font-size:15px;letter-spacing:.1px;box-shadow:0 8px 30px #65c3a333}
+.cinema-secondary{display:flex;justify-content:center;margin-top:11px}
+.cinema-secondary .btn{border-color:#ffffff25;background:#ffffff0b;color:#dbe8e1}
+#previewSlot{position:absolute;inset:0;z-index:1}
+#previewSlot iframe{width:100%;height:100%;border:0}
+@media(max-width:600px){
+#detailModal .dialog-head{padding:calc(14px + env(safe-area-inset-top)) 17px 14px}
+.cinema-backdrop{inset:0 0 20%}
+.cinema-backdrop>img{object-position:center 18%}
+.cinema-play{top:37%;width:66px;height:66px}
+.cinema-panel{padding:16px 18px calc(18px + env(safe-area-inset-bottom));background:linear-gradient(180deg,transparent,#070c0af5 9%,#070c0a 100%)}
+.cinema-info{grid-template-columns:82px minmax(0,1fr);gap:13px;align-items:end}
+.cinema-thumb{width:82px;border-radius:9px}
+.cinema-title{font-size:27px;margin:4px 0 6px}
+.cinema-description{font-size:11px;line-height:1.4;-webkit-line-clamp:2;margin-top:6px}
+.cinema-tags{margin-top:9px;gap:5px}
+.cinema-tag{padding:5px 9px;font-size:10px}
+.cinema-actions{margin-top:15px}
+.cinema-watch{min-height:52px}
+}
 </style>
 </head>
 <body>
@@ -108,10 +155,13 @@ function renderGrid(el,items,empty){el.innerHTML=items.length?items.map(x=>'<art
 async function loadTitles(){const items=type==='movie'?visibleCatalogue():[];if(type==='tv'){try{const shows=await loadShows();paintFast(shows);return}catch(e){$('#results').innerHTML='<div class="empty">Series catalogue unavailable.</div>';return}}$('#resultsTitle').textContent=language==='all'?'Popular films':language==='pa'?'Punjabi films':language==='hi'?'Hindi films':'English films';paintFast(items);message('');if(!catalogueReady){catalogueReady=true;fetchPosters(items)}}
 async function searchTitles(){const q=$('#query').value.trim();if(type==='tv'){try{const shows=await loadShows(q);paintFast(shows)}catch(e){message('Search unavailable.')}return}const items=visibleCatalogue(q);paintFast(items);if(!items.length&&q){message('No match in the featured catalogue.');}else{message('');fetchPosters(items)}}
 async function openDetails(id,kind){clearTimeout(previewTimer);const item=catalogue.find(x=>x.id===id)||saved.find(x=>x.id===id)||{};let data={...item};if(kind==='tv'){try{data=await getJson('https://api.tvmaze.com/shows/'+encodeURIComponent(id))}catch(e){message('Could not load series details.');return}}else if(data.wikiId){try{const query='SELECT ?trailer WHERE { wd:'+data.wikiId+' wdt:P1651 ?trailer. } LIMIT 1';const d=await getJson(WD+encodeURIComponent(query),{'Accept':'application/sparql-results+json'});data.trailerId=d.results?.bindings?.[0]?.trailer?.value||''}catch(e){}}
-const title=titleOf(data),poster=posterOf(data),year=yearOf(data),summary=data.summary||'Explore the film, view its trailer, and find a licensed place to watch.',trailerId=data.trailerId||'',isSaved=saved.some(x=>x.id===String(id)&&x.kind===kind);
-$('#detailContent').innerHTML='<div class="detail-full"><div class="detail-visual">'+(poster?'<img src="'+esc(poster)+'" alt="'+esc(title)+' poster">':'<div class="no-image">AXo</div>')+(trailerId?'<div id="previewSlot"></div>':'')+'</div><div class="detail-copy"><div class="meta">'+esc(year)+' · '+(kind==='tv'?'SERIES':'FILM')+'</div><h2>'+esc(title)+'</h2><p>'+esc(summary)+'</p><div class="detail-actions"><button class="btn primary" id="saveToggle">'+(isSaved?'Saved ✓':'＋ Watchlist')+'</button>'+(trailerId?'<span class="hint">Trailer preview in 5 seconds</span>':'<a class="btn" href="https://www.youtube.com/results?search_query='+encodeURIComponent(title+' official trailer')+'" target="_blank" rel="noopener">Watch trailer ↗</a>')+'</div><div class="detail-actions">'+(kind==='movie'?'<a class="btn" href="https://www.justwatch.com/in/search?q='+encodeURIComponent(title)+'" target="_blank" rel="noopener">Where to watch ↗</a>':'<a class="btn" href="https://www.tvmaze.com/shows/'+encodeURIComponent(id)+'" target="_blank" rel="noopener">Series info ↗</a>')+'</div></div></div>';
-$('#saveToggle').onclick=()=>{const i=saved.findIndex(x=>x.id===String(id)&&x.kind===kind);if(i>=0)saved.splice(i,1);else saved.unshift({id:String(id),kind,title,year,date:year,poster});localStorage.setItem('ep_saved',JSON.stringify(saved));renderSaved();$('#saveToggle').textContent=i>=0?'＋ Watchlist':'Saved ✓'};
-showModal('detailModal');if(trailerId){previewTimer=setTimeout(()=>{const slot=$('#previewSlot');if(slot)slot.innerHTML='<iframe title="'+esc(title)+' trailer" src="https://www.youtube-nocookie.com/embed/'+encodeURIComponent(trailerId)+'?autoplay=1&mute=1&playsinline=1&controls=1&rel=0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>'},5000)}
+const title=titleOf(data),poster=posterOf(data),year=yearOf(data),summary=data.summary||'Discover the story, explore the trailer and find a place to watch.',trailerId=data.trailerId||'',isSaved=saved.some(x=>x.id===String(id)&&x.kind===kind);
+const tags=kind==='tv'?['Series','TV']:([data.lang==='pa'?'Punjabi':data.lang==='hi'?'Hindi':'Film','AXo selection']);
+$('#detailContent').innerHTML='<div class="cinema-page"><div class="cinema-backdrop">'+(poster?'<img src="'+esc(poster)+'" alt="">':'')+(trailerId?'<div id="previewSlot"></div>':'')+'</div>'+(trailerId?'<button class="cinema-play" id="playPreview" aria-label="Play trailer">▶</button>':'')+'<section class="cinema-panel"><div class="cinema-info">'+(poster?'<img class="cinema-thumb" src="'+esc(poster)+'" alt="'+esc(title)+' poster">':'<div class="cinema-thumb"></div>')+'<div class="cinema-copy"><div class="cinema-label">AXo · '+(kind==='tv'?'SERIES':'FEATURE FILM')+'</div><h1 class="cinema-title">'+esc(title)+'</h1><div class="cinema-meta">'+esc(year)+' · '+(kind==='tv'?'Series':'Movie')+'</div><p class="cinema-description">'+esc(summary)+'</p><div class="cinema-tags">'+tags.map(t=>'<span class="cinema-tag">'+esc(t)+'</span>').join('')+'</div></div></div><div class="cinema-actions"><a class="cinema-watch" style="display:flex;align-items:center;justify-content:center;text-decoration:none" href="https://www.youtube.com/results?search_query='+encodeURIComponent(title+' official trailer')+'" target="_blank" rel="noopener">Watch Trailer</a><div class="cinema-secondary"><button class="btn" id="saveToggle">'+(isSaved?'♥ Saved to Watchlist':'＋ Add to Watchlist')+'</button>'+(kind==='movie'?' <a class="btn" href="https://www.justwatch.com/in/search?q='+encodeURIComponent(title)+'" target="_blank" rel="noopener">Where to watch</a>':'')+'</div></div></section></div>';
+$('#saveToggle').onclick=()=>{const i=saved.findIndex(x=>x.id===String(id)&&x.kind===kind);if(i>=0)saved.splice(i,1);else saved.unshift({id:String(id),kind,title,year,date:year,poster});localStorage.setItem('ep_saved',JSON.stringify(saved));renderSaved();$('#saveToggle').textContent=i>=0?'＋ Add to Watchlist':'♥ Saved to Watchlist'};
+showModal('detailModal');
+const play=()=>{const slot=$('#previewSlot');if(slot&&!slot.querySelector('iframe'))slot.innerHTML='<iframe title="'+esc(title)+' trailer" src="https://www.youtube-nocookie.com/embed/'+encodeURIComponent(trailerId)+'?autoplay=1&mute=1&playsinline=1&controls=1&rel=0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>';const btn=$('#playPreview');if(btn)btn.style.display='none'};
+if(trailerId){$('#playPreview').onclick=play;previewTimer=setTimeout(play,5000)}
 }
 
 renderSaved();loadTitles();
